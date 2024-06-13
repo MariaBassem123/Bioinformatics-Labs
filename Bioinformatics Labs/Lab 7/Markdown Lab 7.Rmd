@@ -1,0 +1,540 @@
+---
+title: "Lab 7_Markdown"
+author: "Maria Bassem_20011141"
+date: "2024-05-01"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("limma")
+library(limma)
+
+library(data.table)
+```
+
+## Part 1: Data Wrangling (25 points)
+
+### Task 1.1: Data Acquisition (5 Points)
+
+#### - Read the dataset CSV file into R. For the remainder of this lab, you are supposed to work with this dataframe and it will be referred to as ‘your dataframe’.
+
+##### - Notes about your data:
+
+-   Make sure you have 130 samples x 54673 genes
+
+-   You have two extra columns, one for the phenotype and one for the sample number
+
+-   Notice the orientation of your dataframe where rows are samples and columns are genes
+
+```{r}
+
+my_dataframe <- fread("D:\\Third Year Computer\\Term 2\\Bio\\Labs\\Lab 7\\BrainCancerNA.csv")
+
+my_dataframe <- as.data.frame(my_dataframe)
+nrow(my_dataframe)
+ncol(my_dataframe)
+head(my_dataframe[, 1:2])
+```
+
+#### - Remove the sample id column and put it as rownames. Use the rownames() function
+
+```{r}
+rownames(my_dataframe) <- my_dataframe[,1]
+row_names <- rownames(my_dataframe)
+print(row_names[1:5])
+# Remove the first column from my_dataframe
+my_dataframe <- my_dataframe[,-1]
+print(dim(my_dataframe))  
+
+```
+
+#### - Extract the expression data into a separate dataframe which will be called expression.data
+
+-   By this point you should have two dataframes one with expression data only and the second one with expression data + phenotypes.
+
+```{r}
+expression.data <- my_dataframe
+expression.data <- expression.data[,-1]
+head(expression.data[1:5])
+
+num_na_before <- sum(is.na(expression.data))
+print(num_na_before)
+
+```
+
+### Task 1.2: PCA Before QC (5 Points)
+
+#### 
+
+-   Remove NAs by filling them with the means of their respective genes. (mean of gene across all samples)
+
+```{r}
+library(tidyr)
+col_means <- colMeans(expression.data, na.rm = TRUE)
+
+filled_dataframe <- replace_na(expression.data, as.list(col_means))
+
+head(filled_dataframe[1:3])
+```
+
+#### 
+
+-   Compute PCA using prcomp function. You are not allowed to use any other alternatives like princomp.
+-   You should think about how you should do your PCA. Should you use the genes as rows or as columns? How does the transformation matrix of each differ? [Comment your findings.]{.underline}
+
+```{r}
+# Perform PCA using genes as rows [not preferred in prcomp]
+pca_rows <- prcomp(t(filled_dataframe))
+print(dim(pca_rows$x)) 
+
+# Perform PCA using genes as columns [preferred in prcomp]
+pca_columns <- prcomp(filled_dataframe)
+print(dim(pca_columns$x)) 
+```
+
+-   **Using genes as rows (samples as columns)**:
+
+    -   If there are n samples and g genes (rows) in the dataframe, the dimensions of the transformed matrix will be g\*k, where k is the number of principal components.
+
+    -   In our case, n = 130, g = 54545, k = 130 [PCs]. The dimension of transformation matrix = g\*k = 54545\*130
+
+-   **Using genes as columns:**
+
+    -   If there are n samples (rows) and g genes (columns) in the dataframe, the dimensions of the transformation matrix will be n\*k, where k is the number of principal components.
+
+    -   In our case, n = 130, g = 54545, k = 130 [PCs]. The dimension of transformation matrix = n\*k = 130\*130
+
+prcomp prefers to work with genes as columns and samples as rows. This way makes it easier to interpret the results of PCA as we try to reduce the dimensionality of the features (genes) not the samples.
+
+-   For the remainder of this lab, perform PCA using prcomp and the genes as columns. You should have a transformation matrix 130x130. We will work with this matrix so do not use the predict function.
+-   Make a dataframe of your principal components. This dataframe will be referred to as pcs.
+
+```{r}
+# Create a dataframe of principal components
+pcs <- as.data.frame(pca_columns$x)
+print(dim(pcs))
+```
+
+-   Use the head function to view the data of your pcs
+
+```{r}
+head(pcs[1:5])
+```
+
+### Task 1.3: PCA Before QC [Visualization] (5 Points)
+
+#### - Create plots comparing PC1 vs PC2, PC1 vs PC3, and PC2 vs PC3.
+
+#### - You must use ggplot for each plot. Color according to the phenotype of each sample
+
+```{r}
+pcs$type <- my_dataframe$type
+
+# Create a scatter plot for PC1 vs PC2
+# 
+pc1_pc2 <- ggplot(pcs, aes(x = PC1, y = PC2, color = type)) +
+ geom_point() + 
+ labs(title = "PC1 vs PC2", x = "PC1", y = "PC2")
+
+# Create a scatter plot for PC1 vs PC3
+pc1_pc3 <- ggplot(pcs, aes(x = PC1, y = PC3, color = type)) +
+  geom_point() +
+  labs(title = "PC1 vs PC3", x = "PC1", y = "PC3")
+
+# Create a scatter plot for PC2 vs PC3
+pc2_pc3 <- ggplot(pcs, aes(x = PC2, y = PC3, color = type)) +
+  geom_point() +
+  labs(title = "PC2 vs PC3", x = "PC2", y = "PC3")
+```
+
+-   You must view the three plots together in a figure of size 15x15. Use grid.arrange function to place them on 3 rows and 1 column. Think about how to change the figure size in markdown.
+
+```{r fig.height=15, fig.width=15}
+
+# Arrange the plots in a 3x1 grid
+grid.arrange(pc1_pc2, pc1_pc3, pc2_pc3, ncol = 1)
+```
+
+### 
+
+### Task 1.4: Data Cleaning (5 Points)
+
+#### 
+
+-   For each gene, check for outliers (above/below three standard deviations)
+
+#### - If outliers are present, remove them and place NAs instead.
+
+```{r}
+col_stds <- apply(expression.data, 2, sd, na.rm = T)# 2 indicates that the function should apply to each column
+no_outliers.data <- expression.data
+# Identify outliers (values above/below three standard deviations from the mean) and replace them with NA
+no_outliers.data[abs(no_outliers.data - col_means) > 3 * col_stds] <- NA
+```
+
+```{r}
+
+num_na_after <- sum(is.na(no_outliers.data))
+
+print(num_na_before)
+print(num_na_after)
+print(num_na_after-num_na_before)
+```
+
+#### - Remove NAs by filling them with the means of their respective genes. (mean of gene across all samples)
+
+```{r}
+# calculate the mean once more because the data was changed
+col_outliers_means <- colMeans(no_outliers.data, na.rm = TRUE)
+remove_outliers_data <- replace_na(no_outliers.data, as.list(col_means))
+```
+
+#### - Make sure that the data is in the right orientation (samples as rows and genes as columns)
+
+```{r}
+# head(remove_outliers_data)
+dim(remove_outliers_data)
+```
+
+#### 
+
+-   Perform normalization between genes using the quantile method. Use the normalizeBetweenArrays() function. Comment on what is this function and what the quantile method means.
+
+```{r}
+normalized_data <- normalizeBetweenArrays(remove_outliers_data, method = "quantile")
+normalized_data <- as.data.frame(normalized_data)
+```
+
+```{r}
+head(normalized_data[1:5])
+print(dim(normalized_data))
+```
+
+The normalizeBetweenArrays() function is used in bioinformatics to [normalize gene expression data]{.underline} between different samples. Specifically, when the method parameter is set to "quantile" which ensures that the gene expression values have the [same distribution]{.underline} across samples. It adjusts the expression values in such a way that the distribution of expression levels for each gene becomes consistent across all samples.
+
+This method addresses technical variations that may arise during the gene expression [measurement process]{.underline}. Quantile normalization [helps remove unwanted variations]{.underline}, making gene expression data more comparable and facilitating meaningful interpretations.
+
+### Task 1.5: Data Inspection (5 Points)
+
+#### - Repeat tasks 1.2 and 1.3 but this is for the data after being cleaned.
+
+### Task 1.2: PCA After QC
+
+-   Remove NAs by filling them with the means of their respective genes. (mean of gene across all samples)
+
+```{r}
+col_means_normalized_data <- colMeans(normalized_data, na.rm = TRUE)  
+filled_normalized_dataframe <- replace_na(normalized_data, as.list(col_means_normalized_data))  
+head(filled_normalized_dataframe[1:5])
+```
+
+-   Compute PCA using prcomp function. You are not allowed to use any other alternatives like princomp.
+-   You should think about how you should do your PCA. Should you use the genes as rows or as columns? How does the transformation matrix of each differ? [Comment your findings.]{.underline}
+
+```{r}
+# Perform PCA using genes as rows [not preferred in prcomp] 
+pca_norm_rows <- prcomp(t(filled_normalized_dataframe)) 
+print(dim(pca_norm_rows$x))  
+
+# Perform PCA using genes as columns [preferred in prcomp] 
+pca_norm_columns <- prcomp(filled_normalized_dataframe) 
+print(dim(pca_norm_columns$x)) 
+```
+
+-   **Using genes as rows (samples as columns)**:
+
+    -   If there are n samples and g genes (rows) in the dataframe, the dimensions of the transformed matrix will be g\*k, where k is the number of principal components.
+
+    -   In our case, n = 130, g = 54545, k = 130 [PCs]. The dimension of transformation matrix = g\*k = 54545\*130
+
+-   **Using genes as columns:**
+
+    -   If there are n samples (rows) and g genes (columns) in the dataframe, the dimensions of the transformation matrix will be n\*k, where k is the number of principal components.
+
+    -   In our case, n = 130, g = 54545, k = 130 [PCs]. The dimension of transformation matrix = n\*k = 130\*130
+
+prcomp prefers to work with genes as columns and samples as rows. This way makes it easier to interpret the results of PCA as we try to reduce the dimensionality of the features (genes) not the samples.
+
+-   For the remainder of this lab, perform PCA using prcomp and the genes as columns. You should have a transformation matrix 130x130. We will work with this matrix so do not use the predict function.
+-   Make a dataframe of your principal components. This dataframe will be referred to as pcs.
+
+```{r}
+# Create a dataframe of principal components 
+pcs_norm <- as.data.frame(pca_norm_columns$x) 
+print(dim(pcs_norm))
+```
+
+-   Use the head function to view the data of your pcs
+
+```{r}
+head(pcs_norm[1:5])
+```
+
+### Task 1.3: PCA Before QC [Visualization] (5 Points)
+
+#### - Create plots comparing PC1 vs PC2, PC1 vs PC3, and PC2 vs PC3.
+
+#### - You must use ggplot for each plot. Color according to the phenotype of each sample
+
+```{r}
+pcs_norm$type <- my_dataframe$type  
+# Create a scatter plot for PC1 vs PC2 
+pc1_pc2_norm <- ggplot(pcs_norm, aes(x = PC1, y = PC2, color = type)) + 
+  geom_point() +   
+  labs(title = "Normalized PC1 vs PC2", x = "PC1", y = "PC2")  
+
+# Create a scatter plot for PC1 vs PC3 
+pc1_pc3_norm <- ggplot(pcs_norm, aes(x = PC1, y = PC3, color = type)) + 
+  geom_point() + 
+  labs(title = "Normalized PC1 vs PC3", x = "PC1", y = "PC3")  
+
+# Create a scatter plot for PC2 vs PC3 
+pc2_pc3_norm <- ggplot(pcs_norm, aes(x = PC2, y = PC3, color = type)) +
+  geom_point() +   
+  labs(title = "Normalized PC2 vs PC3", x = "PC2", y = "PC3")
+```
+
+-   You must view the three plots together in a figure of size 15x15. Use grid.arrange function to place them on 3 rows and 1 column. Think about how to change the figure size in markdown.
+
+```{r fig.height=15, fig.width=15}
+
+# Arrange the plots in a 3x1 grid 
+grid.arrange(pc1_pc2_norm, pc1_pc3_norm, pc2_pc3_norm, ncol = 1)
+```
+
+#### - Comment on changes in data before and after QC
+
+-   During the QC, we identify the outliers (above/below three standard deviations), missing values [NAs] in the data that may affect its quality and reliability. Next, we removed the outliers, filled the missing values using the means of genes.
+
+-   Second step was the "Normalization", which aims to remove variations between samples, ensuring that the data is comparable across all samples. It also ensures that the data follows the Gaussian distribution so we can apply regression analysis on this normalized data.
+
+-   Effect of QC on Principal Component Analysis (PCA):
+
+    -   QC and normalization had a significant impact on the results of PCA. Before QC and normalization, PCA captured some variations or biases in the data that were probably outliers, leading to misleading results.
+
+    -   After QC and normalization, PCA can more accurately capture [biological]{.underline} variation, allowing for better interpretation of the principal components and identification of meaningful patterns or clusters in the data.
+
+### Part 2: Analysis (20 points)
+
+#### Task 2.1: Regression Analysis (10 points)
+
+##### - Perform logistic regression analysis using glm function and family binomial
+
+##### - You have to encode your phenotype before running the regression where positive for Tumor and negative for Normal.
+
+```{r}
+# Encode 'Tumor' as positive (1) and 'Normal' as negative (0)
+phenotype <- my_dataframe$type
+encoded_phenotype <- ifelse(phenotype == "normal", 0, 1)
+
+```
+
+##### 
+
+-   Using only PC1 vs PC2 plots, check if there is any unexplained grouping by the PCA (after QC steps). Determine the PC that shows this variation and select it as a covariate in the model
+
+```{r fig.width=10, fig.height=5}
+pc1_pc2_norm
+```
+
+From the above plot, I notice that the there is a grouping between some samples from "pilocytic_astrocytoma", "ependymoma" and "glioblastoma". I think PC1 shows this variation, so I will choose it as the `selected_pc`.
+
+```{r}
+selected_pc <- "PC1"
+head(pcs_norm[selected_pc])
+```
+
+##### 
+
+-   Run the regression model for class of tumor (positive/negative) against the gene expression: Class \~ Gene(i). There are almost 54000 genes, so specify only the 5000 genes found in this file [5000 genes]
+
+```{r}
+# Read gene names from file
+selected_genes <- readLines("D:\\Third Year Computer\\Term 2\\Bio\\Labs\\Lab 7\\top_5000.txt")
+
+final_selected_genes <- character()
+
+# Initialize minimized_data dataframe
+minimized_data <- data.frame(matrix(NA, nrow = nrow(normalized_data), ncol = 0))
+minimized_data$type <- encoded_phenotype
+minimized_data$PC <- as.array(pcs_norm$PC1)
+# Loop through each gene name and add corresponding column to minimized_data
+for (gene_name in selected_genes) {
+  # print(gene_name)
+  idx <- which(colnames(normalized_data) == gene_name)
+  if (length(idx) > 0) {
+    # print(idx)
+    gene_column <- normalized_data[idx]
+    minimized_data <- cbind(minimized_data, gene_column)
+    final_selected_genes <- c(final_selected_genes, gene_name) 
+  } else {
+    print(paste("Skipping gene", gene_name, "because it is not found in normalized_data."))
+  }
+}
+```
+
+```{r}
+# Print the first few rows of minimized_data
+dim(minimized_data)
+```
+
+```{r warning=FALSE}
+
+pvalues_gene_df_glm <- data.frame()
+p_values_list <- list()
+
+# Loop over genes
+for(gene in names(minimized_data[-(1:2)])) {
+  # Specify formula
+  formula <- paste("type ~", gene, " + PC")
+  
+  # Fit logistic regression model
+  logistic_model <- glm(as.formula(formula), family = binomial, data = minimized_data)
+  
+  # Extract p-value
+  p_value <- summary(logistic_model)$coefficients[2, "Pr(>|z|)"]
+  
+  p_values_list[[gene]] <- p_value
+
+  # Check significance based on threshold
+  if (p_value < 0.05) {
+    # Append significant associations to output data frame
+     pvalues_gene_df_glm <- rbind(pvalues_gene_df_glm, data.frame(gene = gene, p_value = p_value))
+    
+  }
+}
+```
+
+##### - Determine all the significant Genes. (Use p-value threshold = 0.05)
+
+```{r}
+head(pvalues_gene_df_glm)
+```
+
+#### Task 2.2: Visualization (10 points)
+
+##### - Plot the heatmap (using heatmap function in R or ggplot2) of the gene expression data of the top 20 significant genes
+
+Reference: [Heatmap in R](https://statisticsglobe.com/heatmap-in-r#:~:text=The%20most%20common%20function%20for%20creating%20heatmaps%20in,shown%20below%3A%20heatmap%20%28data%29%20%23%20Apply%20heatmap%20function)
+
+```{r}
+top_genes <- pvalues_gene_df_glm[order(pvalues_gene_df_glm$p_value), ][1:20, "gene"]
+head(top_genes)
+
+top_gene_expression <- minimized_data[, top_genes]
+
+```
+
+```{r}
+
+heatmap(as.matrix(top_gene_expression), Rowv = NA, Colv = NA)
+
+```
+
+##### - Plot the volcano plot (-log10(p-value) on the y-axis and log fold change on x =-axis), and color the top 20 significant genes on that plot (using red for upregulation (cancer higher than control) and green for downregulation (opposite))
+
+```{r}
+# Calculate the mean of cancer cells
+mean_cancer_cells <- colMeans(minimized_data[minimized_data$type == 1, -(1:2)]) # -1 means removing the type column
+
+# Calculate the mean of normal cells
+mean_normal_cells <- colMeans(minimized_data[minimized_data$type == 0, -(1:2)])
+
+logFC <- log2(mean_cancer_cells / mean_normal_cells)
+
+p_values_arr <- as.numeric(unlist(p_values_list))
+
+neg_log_p_values_arr <- -log10(p_values_arr)
+
+volcano_data <- data.frame(
+  logFC = logFC,
+  neg_log_p_value = neg_log_p_values_arr
+)
+
+volcano_data$diffExpressed <- "No"
+
+volcano_data$diffExpressed <- ifelse(volcano_data$logFC > 0 & volcano_data$neg_log_p_value > -log10(0.05), "Upregulated", ifelse(volcano_data$logFC < 0 & volcano_data$neg_log_p_value > -log10(0.05), "Downregulated", "No"))
+volcano_data[top_genes,]$diffExpressed <- "Top20"
+
+# print(volcano_data[top_genes,])
+```
+
+```{r}
+ggplot(volcano_data, aes(x = logFC, y = neg_log_p_value, col=diffExpressed)) +
+  scale_color_manual(values=c("Downregulated"="green", "Upregulated"="red", "No"="gray", "Top20"="blue"))+
+  geom_point() +
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted", color = "blue") +
+  theme_minimal()+
+  xlab("LogFC") +
+  ylab("-log10(pvalue)") +
+  ggtitle("Volcano Plot")
+```
+
+### Part 4: Annotation (10 points)
+
+#### - In the brain cancer dataset, all genes are in the Affymetrix format
+
+-   Use david tools to convert the top 20 significant gene names to normal gene names.
+
+```{r}
+library(xlsx)
+top20_gene_names_path <- "top20_gene_names.xlsx"
+write.xlsx(colnames(top_gene_expression), top20_gene_names_path)
+
+head(colnames(top_gene_expression))
+```
+
+![](images/clipboard-2611760149.png)
+
+#### ![](images/clipboard-2097786576.png)
+
+![](images/clipboard-3158083818.png)
+
+```{r}
+normal_gene_names <- read.table("D:\\Third Year Computer\\Term 2\\Bio\\Labs\\Lab 7\\david's.txt", header = TRUE, sep = "\t")
+
+normal_gene_names <- normal_gene_names[1:2]
+# Display the first few rows of the dataframe
+head(normal_gene_names[2])
+
+gene_names_path <- "gene_names.xlsx"
+write.xlsx(normal_gene_names[2], gene_names_path)
+```
+
+#### 
+
+-   Use the EnrichR tool to get enrichment results of which pathways the top 20 significant genes are present in.
+
+![](images/clipboard-383715368.png)
+
+![](images/clipboard-1500815393.png)
+
+#### 
+
+-   You are requested to extract Kegg pathways annotation in tables and graphs produced by EnrichR. Comment on the results based on the enrichment analysis p-values
+
+![](images/clipboard-2710986740.png)
+
+![](images/clipboard-1198237243.png)
+
+![](images/clipboard-3325903196.png)
+
+The analysis of KEGG pathways based on p-values reveals a gradient of statistical significance. Ubiquitin mediated proteolysis demonstrates the strongest enrichment (p-value: 0.008511), followed by endocytosis, glyoxylate and dicarboxylate metabolism, and circadian rhythm pathways.
+
+Aldosterone-regulated sodium reabsorption, glycosaminoglycan biosynthesis, and the hedgehog signaling pathway exhibit moderate significance.
+
+All the other pathways are less significant.
+
+Overall, these results highlight potential biological pathways of interest, prioritizing those with lower p-values for further investigation. These results indicate the potential involvement of some of our genes in various KEGG pathways, with varying degrees of statistical significance based on the enrichment analysis p-values. The pathways with lower p-values are more strongly supported by the data, while those with higher p-values may have a weaker association.

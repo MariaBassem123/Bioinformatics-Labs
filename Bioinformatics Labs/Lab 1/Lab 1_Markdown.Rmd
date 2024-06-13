@@ -1,0 +1,178 @@
+---
+title: "Lab1"
+author: "Maria Bassem_20011141"
+date: "2024-02-14"
+output:
+  html_document: default
+  pdf_document: default
+ID: '20011141'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+This report documents the R programming activities done in Lab1. The tasks encompass a variety of topics, ranging from basic variable declarations to more complex data preprocessing and analysis using the tidyverse library. The exercises aim to reinforce fundamental R programming skills and introduce concepts relevant to bioinformatics data analysis.
+
+
+## Part 0: Warmup
+##### 1. Declare and initialize variables of the following types: numeric, integer, character and complex. Display the variables
+```{r}
+# numeric
+num_var <- 1
+print(num_var)
+# integer
+int_var <- 2L
+print(int_var)
+# character
+char_var <- "character"
+print(char_var)
+# complex
+comp_var <- 9i + 4
+print(comp_var)
+```
+##### 2. Show the data types of these variables.
+```{r}
+print(class(num_var))
+print(class(int_var))
+print(class(char_var))
+print(class(comp_var))
+```
+##### 3. Implement a while loop to perform a countdown from 10 to 0.
+```{r}
+i <- 10
+while(i >= 0){
+  print(i)
+  i <- i - 1
+}
+```
+##### 4. Create an if-else statement to check if a number is even or odd.
+```{r}
+x <- 3
+if(x %% 2 == 0) { # mod is %% in R
+  print("even")
+} else {
+  print("odd")
+}
+```
+##### 5. Write a for loop to iterate over a vector of 10 elements and print each element
+```{r}
+vector <- c(1:10)
+for(i in vector){
+  print(i)
+}
+```
+
+##### 6. Create a 4D array fill it with random numbers and show its content
+```{r} 
+arr <- array(c(1:16), dim = c(4,2,4,2)) # size = 64 element
+print(arr)
+```
+
+##### 7. Load the iris dataset into a frame. Find the number of rows, number of columns and the names of the columns. 
+##### Find the number of rows where the petal length is greater than 1.5 and the species is Setosa
+```{r}
+data(iris) # Used data() function to load the iris
+nrow(iris)
+ncol(iris)
+names(iris)
+nrow(subset(iris, Petal.Length > 1.5 & Species == "setosa")) 
+```
+
+## Part 1: Dependency and Dataset
+### Task 1.1: Dependency 
+#### 1. Install package tidyverse
+#### 2. Load the tidyverse library
+```{r}
+# install.packages('tidyverse')
+library(tidyverse)
+```
+
+### Task 1.2: Dataset Loading
+#### 1. Download the BrainCancer dataset from this link. The dataset is in the form of csv. You need to find a way to read it from your filesystem into R Studio (hint: it is a function)
+```{r}
+# Use read.csv() function to read the data from a CSV file.
+brain_data <- read.csv("Brain_GSE50161.csv", header = TRUE, sep = ",") 
+```
+
+
+#### 2. Find the number of rows, number of columns and the names of the columns
+```{r}
+nrow(brain_data)
+ncol(brain_data)
+names(brain_data)[1:20]
+```
+
+## Data Preprocessing
+### Task 2.1: Determining the Working Set
+#### 1. Create a dataframe with the columns (samples, type) and the first 3 Genes and the last 4 Genes. (i.e the table should have 9 columns)
+```{r}
+working_set <- select(brain_data, samples, type, names(brain_data) [3:5], names(brain_data) [54674:54677])
+names(working_set)
+```
+
+#### 2. Create a table from the categorical values of column “type” from your dataframe. What is the most occurring type of cancer? You are encouraged to use ?table() or refer to the references to find the rdocs.
+```{r}
+# create a frequency table (type_table) of the categorical values in the "type" column of the working_set dataframe.
+type_table <- table(working_set$type)
+type_table
+
+# max(type_table) # number of occurrences of the max type of cancer
+index <- which.max(type_table) # index of the max type of cancer
+most_occurring_type <- names(type_table[index])
+cat("The most occurring type of cancer is:", most_occurring_type, "\n")
+```
+### Task 2.2: Data Cleaning and Filtering
+#### 1. From your dataframe, how many values are NA?
+```{r}
+sum(is.na(working_set))
+```
+
+#### 2. Filter rows (samples) where the expression in the first gene (X1007_s_at) is greater than 12.0. Print  number of rows before and after filtration
+```{r}
+cat("before:", nrow(working_set), "\n")# before
+filtered_data <- filter(working_set, X1007_s_at > 12)
+cat("after:", nrow(filtered_data), "\n")# after
+```
+### Task 2.3: Data Analysis
+#### 1. For each gene in your dataframe, calculate a summary of the mean and the standard deviation across all samples.
+```{r}
+# across --> within summarise to apply summary functions to multiple columns.
+
+gene_summary <- summarise(working_set, across(-(1:2), list(Mean = mean, StdDev = sd), na.rm = TRUE))
+
+# Print the summary
+print(gene_summary)
+```
+
+#### 2. For each gene in your dataframe, calculate a summary of the mean and the standard deviation for each type of cancer.
+```{r}
+by_type <- group_by(working_set, type)
+cancer_summary <- summarise(by_type, across(-(1:2), list(Mean = mean, StdDev = sd)))
+# Print the summary
+print(cancer_summary)
+```
+
+##### 3. Write your summaries into a .csv file 
+```{r}
+# Write the cancer_summary into a CSV file
+write.csv(cancer_summary, "cancer_summary.csv")
+
+# Write the gene_summary into a CSV file
+write.csv(gene_summary, "gene_summary.csv")
+```
+
+##### 4. Create a dataframe that has the (sample, type, and X1007_s_at)columns. Add a column that calculates the mean gene expression in the first gene (X1007_s_at) for each cancer type across all samples. (hint: Use piping)
+```{r}
+working_set2 <- select(working_set, samples, type, X1007_s_at)
+
+working_set2 <- working_set2 %>%
+  group_by(type) %>%
+  mutate(mean_fun = mean(X1007_s_at))
+working_set2
+
+# working_set2 <- working_set %>%
+#  select(samples, type, X1007_s_at) %>%
+#  group_by(type) %>%
+#  mutate(mean_fun = mean(X1007_s_at))
+```

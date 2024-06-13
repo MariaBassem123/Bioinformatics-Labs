@@ -1,0 +1,444 @@
+---
+title: 'Lab5: PCA and Clustering'
+author: "Maria Bassem Emil"
+date: "2024-03-28"
+output:
+  word_document: default
+  html_document: default
+---
+
+##### ID: 20011141
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 1: Principal Component Analysis Using PLINK (35 Points)
+
+### Task 1.1: QC and PCA (15 Points)
+
+#### 1. Run Minor Allele Frequency count on your dataset using PLINK and the flag --freq. Provide a screenshot of the head of the file. Explain the output
+
+plink –bfile Qatari156_filtered_pruned --freq --out qatari_freq
+
+![Runing Minor Allele Frequency count](images/Screenshot%20from%202024-03-25%2021-51-13.png)
+
+![Head of freq file](images/Screenshot%20from%202024-03-25%2022-03-08.png)
+
+In the provided output:
+
+-   **CHR**: Chromosome number or identifier. In our head, it is 1.
+
+-   **SNP**: SNP identifier.
+
+-   **A1**: Allele 1 (minor allele).
+
+-   **A2**: Allele 2 (major allele).
+
+-   **MAF**: Minor allele frequency.
+
+-   **NCHROBS**: Number of allele observations used to calculate the frequency.
+
+For example, if we took the first SNP, we find that the SNP id is rs10907175 on chromosome 1. This SNP has alleles C (minor) and A (major). The minor allele frequency (MAF) is 0.08974. Allele C (minor) was observed 312 times (156 samples \* 2 alleles), that is this SNP was observed in all the samples.
+
+#### 2. Run QC on your dataset using PLINK
+
+##### Try the following flags [separately]{.underline} --maf --geno and --hwe filters. Try and report different levels and thresholds focusing on the number of variants removed. Add screenshots of the log files output at the end of each trial (3 max with meaningful values for each flag).
+
+***In --maf, as the value increases, the number of SNPs remove will increase.***
+
+-   --maf 0.05
+
+![](images/clipboard-2239186873.png)
+
+-   --maf 0.075
+
+![](images/clipboard-4232739291.png)
+
+-   --maf 0.1
+
+![](images/clipboard-3576538432.png)
+
+***In --geno, as the threshold decreases, the number of SNPs remove will increase.***
+
+-   --geno 0.001
+
+![](images/clipboard-1195329156.png)
+
+-   --geno 0.00003
+
+![](images/clipboard-3214048921.png)
+
+-   --geno 0.05
+
+![](images/clipboard-2078626538.png)
+
+***In --hwe, as the threshold decreases, the number of SNPs remove will increase.***
+
+It's a principle stating that the [**genetic variation in a population will remain constant**]{.underline} from one generation to the next if there are [*no disturbing factors*]{.underline} such as selection, mutation, gene flow, and if there is random mating and a large population size
+
+-   --hwe 1e-6 (low hwe threshold) –\> high stringent
+
+![](images/clipboard-1216982366.png)
+
+-   --hwe 1e-4 (moderate hwe threshold) –\> moderate stringent
+
+![](images/clipboard-1153443679.png)
+
+-   --hwe 0.001 (high hwe threshold) –\> less stringent
+
+##### ![](images/clipboard-3722418591.png)
+
+##### Run the final version of your QC using all the flags combined and report the final number of variants. Use the following thresholds (hwe: 0.01, maf: 0.1, geno: 0.001)
+
+![](images/clipboard-2537226677.png)
+
+##### Run PCA on your dataset using the PLINK and --pca flag. You should recode the data to be in the format ped/map
+
+![](images/msg-434298136-2605.jpg)
+
+### Task 1.2: PCA Visualization (20 Points)
+
+#### Explore Egienvectors and Eigenvalues. For Ubuntu/MacOS/Windows WSL users, use the awk, vi, and head commands to view the eigenvalues and eigenvectors.
+
+![](images/photo1711715997.jpeg)
+
+![](images/photo1711716057.jpeg)
+
+#### Libraries and Imports
+
+```{r}
+library(ggplot2)
+# install.packages("scatterplot3d")
+library(scatterplot3d)
+library(dplyr)
+#install.packages("clValid")
+library(clValid)
+# install.packages("dendextend")
+library(dendextend)
+# install.packages("gridExtra")
+library(gridExtra)
+```
+
+#### Load the PCA results into R.
+
+```{r}
+# Load PCA results
+eigen_vec <- read.table("D:\\Third Year Computer\\Term 2\\Bio\\Labs\\Lab 5\\pca_qc_results.eigenvec", header=FALSE)
+
+# Set column names
+colnames(eigen_vec) <- c("Family ID", "Sample ID", paste0("PC", 1:(ncol(eigen_vec) - 2)))
+head(eigen_vec)
+
+eigen_values <- read.table("D:\\Third Year Computer\\Term 2\\Bio\\Labs\\Lab 5\\pca_qc_results.eigenval", header=FALSE)
+head(eigen_values)
+```
+
+#### Create 2D scatter plots comparing PC1 vs PC2, PC1 vs PC3, and PC2 vs PC3 using ggplot2.
+
+```{r}
+# Create scatter plot: PC1 vs PC2
+ggplot(eigen_vec, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  labs(title = "PC1 vs PC2")
+
+# Create scatter plot: PC1 vs PC3
+ggplot(eigen_vec, aes(x = PC1, y = PC3)) +
+  geom_point() +
+  labs(title = "PC1 vs PC3")
+
+# Create scatter plot: PC2 vs PC3
+ggplot(eigen_vec, aes(x = PC2, y = PC3)) +
+  geom_point() +
+  labs(title = "PC2 vs PC3")
+```
+
+#### Create a scree plot for the first 20 components with the explained variance.
+
+```{r}
+# Calculate total sum of eigenvalues
+total_variance <- sum(eigen_values$V1)
+# Explained variance
+explained_variance <- eigen_values$V1 / total_variance
+variance_20 <- explained_variance[1:20]
+
+# Scree plot
+# instead of geom_line() we could use geom_col() according to geeks for geeks
+qplot(c(1:20), variance_20) +
+ geom_line() +
+ geom_point(size=3)+
+ xlab("Principal Component") +
+ ylab("Variance Explained") +
+ ggtitle("Scree Plot") +
+ ylim(0.02, 0.18)
+```
+
+#### Install and use the scatterplot3d package for 3D plots.
+
+#### Create a 3D plot of the first three principal components.
+
+```{r}
+scatterplot3d(eigen_vec$PC1, eigen_vec$PC2, eigen_vec$PC3,
+              main="3D Plot of PC1, PC2, and PC3",
+              xlab="PC1", ylab="PC2", zlab="PC3",
+              angle=75)
+```
+
+## Part 2: Clustering in R (40 Points)
+
+### Task 2.1: Perform Clustering (10 Points)
+
+#### Reduce the dimensionality of the dataset by only choosing the first three pricipal components PC1, PC2, PC3
+
+```{r}
+# Select the first three principal components 
+eigen_vec_3 <- eigen_vec %>% 
+  select(PC1, PC2, PC3)
+head(eigen_vec_3)
+```
+
+#### We will perform clustering techniques to find the clusters that correspond to different subpopulations in this population
+
+#### - Use k-means clustering with kmeans function
+
+#### - Try different number of clusters (k)
+
+#### - Determine the optimality of the number of clusters using Dunn’s index or Xie Beni’s index. HINT: for Dunn’s index use the dunn function. For Xie Beni’s index use the fclustIndex function
+
+```{r}
+# Perform k-means clustering with different values of k
+k_values <- 3:12
+# dunn
+dunn_indices <- numeric(length(k_values))
+
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+  # Perform k-means clustering
+  # nstart > 1 is recommended to improve the robustness of the k-means clustering algorithm by trying multiple initializations and selecting the best result based on within-cluster variance.
+  km.res <- kmeans(eigen_vec_3, centers = k, nstart = 25)
+  
+  Dist <- dist(eigen_vec_3, method="euclidean")
+  
+  # Calculate Dunn's index
+  dunn_indices[i] <- dunn(Dist, km.res$cluster)
+
+
+  # Print results
+  cat("For k =", k, ", Dunn's Index:", dunn_indices[i], "\n")
+}
+
+# Dunn's index has a value between zero and infinity, and should be maximized
+best_k_dunn <- k_values[which.max(dunn_indices)]
+
+# Print the best k and its corresponding indices
+cat("Best k according to Dunn's index:", best_k_dunn, "\n")
+km_final <- kmeans(eigen_vec_3, centers = best_k_dunn, nstart = 25)
+
+plot(k_values, dunn_indices, type = "b", 
+     xlab = "Number of Clusters (k)", 
+     ylab = "Dunn's Index", 
+     main = "Dunn's Index vs. Number of Clusters")
+```
+
+### Task 2.2: Perform Hierarchical Clustering (10 Points)
+
+#### Try hierarchical clustering methods, once with single linkage and another with average linkage clustering.
+
+##### Use the hclust function. Note that you need to specify the method as either "single" for single linkage or "average" for average linkage.
+
+```{r}
+Dist <- dist(eigen_vec_3, method="euclidean")
+
+hclust_single <- hclust(Dist, method = 'single')
+hclust_avg <- hclust(Dist, method = 'average')
+```
+
+#### Try different number of clusters
+
+#### Determine the optimality of the number of clusters using Dunn’s index or Xie Beni’s index for the average linkage clustering
+
+```{r}
+num_clusters <- 2:10  
+# Store Dunn's index or Xie Beni's index for each number of clusters
+dunn_hier_avg_indices <- numeric(length(num_clusters))
+
+for (i in seq_along(num_clusters)) {
+  k <- num_clusters[i]
+
+    # Cut the dendrogram to get clusters
+  clusters_avg <- cutree(hclust_avg, k)
+
+  # Dunn's index
+  dunn_hier_avg_indices[i] <- dunn(Dist, clusters_avg)
+  
+  cat("For k =", k, ", Dunn's Average Index:", dunn_hier_avg_indices[i], "\n")
+}
+# Dunn's index has a value between zero and infinity, and should be maximized
+best_hier_k_dunn <- k_values[which.max(dunn_hier_avg_indices)]
+best_hier_dunn <- max(dunn_hier_avg_indices)
+
+# Print the best k and its corresponding indices
+cat("Best k according to Dunn's index:", best_hier_k_dunn, "\n")
+```
+
+#### Determine the optimality of the number of clusters using common sense (expert eye) for single linkage clustering.
+
+I drew the dendrogram plot from the single linkage clustering. Then I counted each branch as one cluster, thus I obtained k = 5 as the best k (num of clusters)
+
+#### Plot the dendrograms using the plot function
+
+```{r}
+suppressPackageStartupMessages(library(dendextend))
+single_dend_obj <- as.dendrogram(hclust_single)
+single_col_dend <- color_branches(single_dend_obj, h = 0.05)
+plot(single_col_dend, main = "Dendrogram - Single Linkage")
+
+avg_dend_obj <- as.dendrogram(hclust_avg)
+avg_col_dend <- color_branches(avg_dend_obj, h = 0.15)
+plot(avg_col_dend, main = "Dendrogram - Average Linkage")
+```
+
+## Task 2.3: Visualize Clusters (20 Points)
+
+```{r}
+clusters_kmeans <- km_final$cluster
+clusters_single <- cutree(hclust_single, k = 5)
+clusters_avg <- cutree(hclust_avg, best_hier_k_dunn)
+
+eig_combined <- cbind(eigen_vec_3, clusters_single, clusters_avg, clusters_kmeans)
+head(eig_combined)
+```
+
+#### Visualize the clusters correposponding to the subpopulations that were produced from each clustering on the pca plots (PC1 vs PC2, PC1 vs PC3 and PC2 vs PC3) using ggplot2 and do not forget to color them.
+
+```{r}
+# Plot PCs plots with clusters colored
+# PC1 vs PC2
+ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - Average Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+
+# PC2 vs PC3
+ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - Average Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+
+# PC1 vs PC3
+ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - Average Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+```
+
+#### Create a side-by-side comparison of the clusters formed by k-means, single linkage, and average linkage methods. Use gridExtra's grid.arrange function to plot multiple clustering results side by side for easy comparison. Make sure each plot uses different colors for each cluster to aid in comparison
+
+```{r}
+
+# Plot PCs plots with clusters colored
+# PC1 vs PC2
+pc1_2_single <- ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+pc1_2_avg <- ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - Average Linkage Clustering") +
+  theme_minimal()
+
+pc1_2_kmeans <- ggplot(eig_combined, aes(x = PC1, y = PC2, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC2) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+
+# PC2 vs PC3
+pc2_3_single <- ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+pc2_3_avg <- ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - Average Linkage Clustering", color = "Clusters") +
+  theme_minimal() 
+
+pc2_3_kmeans <- ggplot(eig_combined, aes(x = PC2, y = PC3, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC2 vs PC3) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+
+# PC1 vs PC3
+pc1_3_single <- ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_single))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - Single Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+pc1_3_avg <- ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_avg))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - Average Linkage Clustering", color = "Clusters") +
+  theme_minimal()
+
+pc1_3_kmeans <- ggplot(eig_combined, aes(x = PC1, y = PC3, color = factor(clusters_kmeans))) +
+  geom_point() +
+  labs(title = "PCA Plot (PC1 vs PC3) - K-means Clustering", color = "Clusters") +
+  theme_minimal()
+
+# Arrange plots side by side for comparison
+grid.arrange(pc1_2_single, pc1_2_avg, pc1_2_kmeans, nrow = 3, ncol = 1)
+
+grid.arrange(pc2_3_single, pc2_3_avg, pc2_3_kmeans, nrow = 3, ncol = 1)
+
+grid.arrange(pc1_3_single, pc1_3_avg, pc1_3_kmeans, nrow = 3, ncol = 1)
+```
+
+#### Comments on comparison:
+
+For PC1 vs PC2, the hierarichal clustering using average clustering produced the best result as it produced cohesive clusters with distinguishable boundaries.
+
+For PC2 vs PC3, I think k-means did great as it splited the data into groups of related points. The points are somehow near to each other.
+
+For PC1 vs PC3, the hierarichal clustering using average clustering was able to cluster the points into somehow good and coherent clusters.
+
+#### Write your comments on how the data quality control affected the dataset
+
+Quality control on data is crucial as it helps in multiple things making the quality of clustering and analysis more valuable.
+
+For example, quality control helps in [removing of outliers]{.underline}. This enhances the robustness of the datasetas outliers can skew statistical analysis and clustering results, leading to erroneous interpretations.
+
+Another benefit is the [normalization and standardization]{.underline} of the data ensuring that all variables contribute equally to the clustering process, preventing variables with larger scales from dominating the analysis so that the clustering algorithm can effectively capture the underlying patterns in the data without being influenced by variable magnitudes.
+
+There are many more benefits, such as [handling the missing values]{.underline} through imputation or though deciding to remove them from the data.
+
+Overall, data quality control measures contribute significantly to the reliability, accuracy, and interpretability of clustering results. By addressing data quality issues, we can ensure that the analysis will yield meaningful insights.
